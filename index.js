@@ -1,10 +1,9 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, getVoiceConnection } = require('@discordjs/voice');
 const express = require('express');
-const path = require('path');
 
-// --- Cấu hình Bot ---
+// --- Lấy cấu hình từ Biến Môi Trường (Environment Variables trên Render) ---
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
@@ -16,58 +15,56 @@ const client = new Client({
     ]
 });
 
-// Giả lập database lưu các server đã vote 24/7 (Trong thực tế nên dùng MongoDB/Quick.db)
-// Key: guildId, Value: true/false
+// Bộ nhớ tạm lưu các server đã được kích hoạt 24/7 qua Web
 global.votedGuilds = new Map(); 
 
-// Link nhạc Lofi chất lượng cao (Stream URL ổn định)
+// Link stream nhạc Lofi Piano/Sad cực kỳ ổn định, không lo die link
 const LOFI_URL = "https://stream.zeno.fm/0r0xa792kwzuv"; 
-
 const player = createAudioPlayer();
 
-// --- Server Express giữ bot luôn online ---
+// --- Khởi tạo Server Express để UptimeRobot giữ bot luôn thức ---
 const app = express();
 app.use(express.json());
 
-// API nhận lệnh vote từ Web Vercel
+// Cho phép Web Vercel gọi API để kích hoạt chế độ 24/7 cho Server cụ thể
 app.post('/api/vote', (req, res) => {
     const { guildId } = req.body;
     if (!guildId) return res.status(400).json({ error: 'Thiếu Guild ID' });
     
     global.votedGuilds.set(guildId, true);
-    res.json({ success: true, message: `Server ${guildId} đã kích hoạt 24/7!` });
+    res.json({ success: true, message: `Server ${guildId} đã kích hoạt 24/7 thành công!` });
 });
 
 app.get('/', (req, res) => {
-    res.send('Bot Skull Music đang chạy 24/7!');
+    res.send('Skull Music Bot đang hoạt động hoàn hảo 24/7!');
 });
 
 app.listen(process.env.PORT || 3000, () => {
-    console.log('Server Uptime đã sẵn sàng.');
+    console.log('Server Web đồng hành cùng UptimeRobot đã kích hoạt.');
 });
 
-// --- Logic Discord Bot ---
+// --- Logic Hệ Thống Bot Discord ---
 client.once('ready', async () => {
-    console.log(`Tôi đã đăng nhập thành công dưới tên: ${client.user.tag}`);
+    console.log(`Đã kết nối thành công: ${client.user.tag}`);
     
-    // Đăng ký Slash Commands
+    // Đăng ký Slash Commands ứng dụng
     const commands = [
-        new SlashCommandBuilder().setName('lofi').setDescription('Phát nhạc lofi 24/7'),
-        new SlashCommandBuilder().setName('play').setDescription('Phát nhạc lofi'),
-        new SlashCommandBuilder().setName('stop').setDescription('Dừng phát nhạc và rời kênh')
+        new SlashCommandBuilder().setName('lofi').setDescription('Kết nối và phát nhạc lofi 24/7'),
+        new SlashCommandBuilder().setName('play').setDescription('Kết nối và phát nhạc lofi'),
+        new SlashCommandBuilder().setName('stop').setDescription('Dừng phát nhạc hoàn toàn và rời phòng')
     ].map(command => command.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
     try {
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('Đã cập nhật các lệnh thành công!');
+        console.log('Đã đồng bộ hóa các lệnh Slash thành công!');
     } catch (error) {
-        console.error(error);
+        console.error('Lỗi khi đồng bộ lệnh Slash: ', error);
     }
 });
 
-// Hàm xử lý vào phát nhạc
-function playLofi(channel) {
+// Hàm kết nối và đẩy luồng nhạc vào phòng voice
+function playMusicStream(channel) {
     const connection = joinVoiceChannel({
         channelId: channel.id,
         guildId: channel.guild.id,
@@ -86,17 +83,18 @@ client.on('interactionCreate', async interaction => {
     const voiceChannel = member.voice.channel;
 
     if (!voiceChannel) {
-        return interaction.reply({ content: 'Ní phải vào một kênh voice trước!', ephemeral: true });
+        return interaction.reply({ content: 'Ní ơi, ní phải vào một kênh voice trước thì tôi mới vào được!', ephemeral: true });
     }
 
     if (commandName === 'lofi' || commandName === 'play') {
         await interaction.deferReply();
         try {
-            playLofi(voiceChannel);
+            playMusicStream(voiceChannel);
+            // Trả về đúng cú pháp: ✅ Đã tham gia thành công vào #id_kênh
             await interaction.editReply(`✅ Đã tham gia thành công vào <#${voiceChannel.id}>`);
         } catch (error) {
             console.error(error);
-            await interaction.editReply('Có lỗi xảy ra khi kết nối vào kênh!');
+            await interaction.editReply('Lỗi rồi ní ơi! Không thể kết nối vào kênh voice được.');
         }
     }
 
@@ -104,14 +102,14 @@ client.on('interactionCreate', async interaction => {
         const connection = getVoiceConnection(guildId);
         if (connection) {
             connection.destroy();
-            await interaction.reply('⏹️ Đã dừng nhạc và rời kênh.');
+            await interaction.reply('⏹️ Đã tắt nhạc và rời khỏi phòng voice.');
         } else {
-            await interaction.reply('Bot hiện tại không ở trong kênh nào.');
+            await interaction.reply('Hiện tại tôi có ở trong phòng nào đâu ní!');
         }
     }
 });
 
-// --- Tự động thoát khi phòng trống (Xử lý Anti-Empty) ---
+// --- Tự động phát hiện phòng trống và thoát ---
 client.on('voiceStateUpdate', (oldState, newState) => {
     const botConnection = getVoiceConnection(oldState.guild.id);
     if (!botConnection) return;
@@ -119,26 +117,26 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     const botVoiceChannelId = botConnection.joinConfig.channelId;
     const channel = oldState.guild.channels.cache.get(botVoiceChannelId);
 
-    if (channel && channel.members.size === 1) { // Chỉ còn lại duy nhất Bot
-        // Kiểm tra xem server này đã VOTE kích hoạt 24/7 chưa
-        const is247 = global.votedGuilds.get(oldState.guild.id);
+    // Nếu phòng chỉ còn lại đúng 1 mình Bot
+    if (channel && channel.members.size === 1) {
+        const is247Active = global.votedGuilds.get(oldState.guild.id);
 
-        if (!is247) {
+        // Nếu CHƯA ĐƯỢC VOTE 24/7 thì mới tự động thoát phòng
+        if (!is247Active) {
             setTimeout(() => {
-                // Kiểm tra lại sau 5 giây xem có ai vào lại không
+                // Kiểm tra lại sau 5 giây xem có ai vào lại cứu vớt không
                 if (channel.members.size === 1) {
                     botConnection.destroy();
                     
-                    // Gửi tin nhắn thông báo về kênh chat hệ thống hoặc kênh text bất kỳ có quyền nhắn
+                    // Tìm một kênh text hợp lệ trong server để nhắn thông báo rời đi
                     const textChannel = oldState.guild.channels.cache.find(ch => ch.isTextBased());
                     if (textChannel) {
-                        textChannel.send('Tôi đã mất kết nối vì tôi chỉ có kênh 1 mình. Hãy lên web vote để bật 24/7 nha ní!').catch(() => {});
+                        textChannel.send('Tôi đã mất kết nối vì tôi chỉ có kênh 1 mình.').catch(() => {});
                     }
                 }
-            }, 5000); 
+            }, 5000);
         }
     }
 });
 
 client.login(TOKEN);
-
