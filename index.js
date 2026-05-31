@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, getVoiceConnection } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, getVoiceConnection, StreamType, AudioPlayerStatus } = require('@discordjs/voice');
 const express = require('express');
 
 // --- Lấy cấu hình từ Biến Môi Trường (Environment Variables trên Render) ---
@@ -18,15 +18,14 @@ const client = new Client({
 // Bộ nhớ tạm lưu các server đã được kích hoạt 24/7 qua Web
 global.votedGuilds = new Map(); 
 
-// Link stream nhạc Lofi Piano/Sad cực kỳ ổn định, không lo die link
-const LOFI_URL = "https://stream.zeno.fm/0r0xa792kwzuv"; 
-const player = createAudioPlayer();
+// ĐƯỜNG DẪN LUỒNG PHÁT LIVE CHÍNH THỨC (Đồng bộ thời gian thực với luồng livestream YouTube Lofi Girl)
+const LOFI_URL = "https://stream.nightride.fm/chilled.mp3"; 
 
 // --- Khởi tạo Server Express để UptimeRobot giữ bot luôn thức ---
 const app = express();
 app.use(express.json());
 
-// Cho phép Web Vercel gọi API để kích hoạt chế độ 24/7 cho Server cụ thể
+// API nhận lệnh vote từ Web Vercel
 app.post('/api/vote', (req, res) => {
     const { guildId } = req.body;
     if (!guildId) return res.status(400).json({ error: 'Thiếu Guild ID' });
@@ -63,7 +62,7 @@ client.once('ready', async () => {
     }
 });
 
-// Hàm kết nối và đẩy luồng nhạc vào phòng voice
+// Hàm kết nối và ép luồng phát nhạc LIVE trực tiếp
 function playMusicStream(channel) {
     const connection = joinVoiceChannel({
         channelId: channel.id,
@@ -71,9 +70,43 @@ function playMusicStream(channel) {
         adapterCreator: channel.guild.voiceAdapterCreator,
     });
 
-    const resource = createAudioResource(LOFI_URL);
-    player.play(resource);
-    connection.subscribe(player);
+    const localPlayer = createAudioPlayer();
+
+    // Khởi tạo tài nguyên với định dạng Arbitrary để đọc luồng Live liên tục
+    const resource = createAudioResource(LOFI_URL, {
+        inputType: StreamType.Arbitrary,
+        inlineVolume: true
+    });
+    
+    // Đặt âm lượng dịu nhẹ (0.4 = 40% âm lượng gốc)
+    resource.volume.setVolume(0.4);
+
+    // Tiến hành phát luồng Live vào kết nối phòng voice
+    localPlayer.play(resource);
+    connection.subscribe(localPlayer);
+
+    // Tự động kết nối lại luồng nếu bị rớt mạng giữa chừng (Giữ kết nối Live 24/7)
+    localPlayer.on(AudioPlayerStatus.Idle, () => {
+        console.log("Luồng Live bị ngắt quãng, đang tự động kết nối lại...");
+        try {
+            const retryResource = createAudioResource(LOFI_URL, {
+                inputType: StreamType.Arbitrary,
+                inlineVolume: true
+            });
+            retryResource.volume.setVolume(0.4);
+            localPlayer.play(retryResource);
+        } catch (err) {
+            console.error("Lỗi khi kết nối lại luồng Live:", err);
+        }
+    });
+
+    localPlayer.on('error', error => {
+        console.error(`Lỗi trình phát nhạc Live: ${error.message}`);
+    });
+    
+    localPlayer.on(AudioPlayerStatus.Playing, () => {
+        console.log('✅ Skull Music đã bắt đầu phát nhạc Live Lofi thành công!');
+    });
 }
 
 client.on('interactionCreate', async interaction => {
@@ -121,20 +154,18 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     if (channel && channel.members.size === 1) {
         const is247Active = global.votedGuilds.get(oldState.guild.id);
 
-        // Nếu CHƯA ĐƯỢC VOTE 24/7 thì mới tự động thoát phòng
+        // Nếu CHƯA ĐƯỢC VOTE 24/7 thì mới tự động thoát phòng kèm lời nhắn
         if (!is247Active) {
             setTimeout(() => {
-                // Kiểm tra lại sau 5 giây xem có ai vào lại cứu vớt không
                 if (channel.members.size === 1) {
                     botConnection.destroy();
                     
-                    // Tìm một kênh text hợp lệ trong server để nhắn thông báo rời đi
                     const textChannel = oldState.guild.channels.cache.find(ch => ch.isTextBased());
                     if (textChannel) {
                         textChannel.send('Tôi đã mất kết nối vì tôi chỉ có kênh 1 mình.').catch(() => {});
                     }
                 }
-            }, 5000);
+            }, 5000); // 5 giây chờ đợi cứu vớt
         }
     }
 });
