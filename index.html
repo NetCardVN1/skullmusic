@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skull Music - Lofi 24/7</title>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Metal+Mania&family=Nosifer&family=Rubik+Glitch&family=Permanent+Marker&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0b0c10;
+            color: #c5c6c7;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Khung chứa chữ chạy hiệu ứng */
+        .brand-container {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-shadow: 0 0 15px #66fcf1;
+            transition: font-family 0.2s ease-in-out;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 8px;
+            color: #fff;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-invite { background-color: #5865F2; }
+        .btn-join { background-color: #23272A; border: 1px solid #5865F2; }
+        .btn-vote { background-color: #ff4757; font-size: 1.1rem; }
+
+        .btn:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(255,255,255,0.1); }
+
+        .vote-box {
+            background: #1f2833;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+
+        input {
+            padding: 10px;
+            border-radius: 4px;
+            border: none;
+            margin-right: 10px;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="brand-container" id="botTitle">SKULL MUSIC</div>
+
+    <div class="btn-group">
+        <a href="YOUR_DISCORD_BOT_INVITE_LINK" target="_blank" class="btn btn-invite">Mời Bot Vào Server</a>
+        <a href="YOUR_DISCORD_SERVER_LINK" target="_blank" class="btn btn-join">Tham Gia Server Hỗ Trợ</a>
+    </div>
+
+    <div class="vote-box">
+        <h3>Bật Chế Độ Kích Hoạt 24/7 Miễn Phí</h3>
+        <p>Nhập Server ID của ní để giữ bot không bao giờ tự thoát</p>
+        <input type="text" id="guildIdInput" placeholder="Nhập ID Server Discord...">
+        <button class="btn btn-vote" onclick="submitVote()">VOTE NGAY</button>
+        <p id="msg" style="margin-top: 10px; font-weight: bold;"></p>
+    </div>
+
+    <script>
+        // Hệ thống đổi Font chữ liên tục (Cycling fonts) tạo nét "Skull / Kinh dị / Hầm hố"
+        const fonts = ['Creepster', 'Metal Mania', 'Nosifer', 'Rubik Glitch', 'Permanent Marker'];
+        let currentFontIndex = 0;
+        const titleEl = document.getElementById('botTitle');
+
+        setInterval(() => {
+            currentFontIndex = (currentFontIndex + 1) % fonts.length;
+            titleEl.style.fontFamily = fonts[currentFontIndex];
+        }, 800); // Thay đổi font sau mỗi 0.8 giây
+
+        // Hàm xử lý gửi yêu cầu Vote về phía Render Bot
+        async function submitVote() {
+            const guildId = document.getElementById('guildIdInput').value.trim();
+            const msgEl = document.getElementById('msg');
+            
+            if(!guildId) {
+                msgEl.innerText = "Ní chưa nhập Server ID mà!";
+                msgEl.style.color = "#ff4757";
+                return;
+            }
+
+            // ĐIỀN ĐƯỜNG DẪN WEB RENDER CỦA NÍ VÀO ĐÂY (Ví dụ: https://bot-lofi.onrender.com)
+            const RENDER_BOT_URL = "YOUR_RENDER_BOT_URL"; 
+
+            try {
+                const response = await fetch(`${RENDER_BOT_URL}/api/vote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guildId: guildId })
+                });
+                const data = await response.json();
+
+                if(data.success) {
+                    msgEl.innerText = "✅ Vote thành công! Bot sẽ giữ 24/7 tại server này.";
+                    msgEl.style.color = "#2ed573";
+                } else {
+                    msgEl.innerText = "Có lỗi xảy ra, vui lòng thử lại!";
+                    msgEl.style.color = "#ff4757";
+                }
+            } catch (err) {
+                console.error(err);
+                msgEl.innerText = "Không thể kết nối đến Bot. Hãy chắc chắn bot trên Render đang chạy!";
+                msgEl.style.color = "#ff4757";
+            }
+        }
+    </script>
+</body>
+</html>
+
