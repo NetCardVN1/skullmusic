@@ -3,7 +3,7 @@ const { REST } = require('@discordjs/rest');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, getVoiceConnection, StreamType, AudioPlayerStatus } = require('@discordjs/voice');
 const express = require('express');
 
-// --- Lấy cấu hình từ Biến Môi Trường (Environment Variables trên Render) ---
+// --- Cấu hình lấy từ Biến môi trường trên Render ---
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
@@ -15,54 +15,54 @@ const client = new Client({
     ]
 });
 
-// Bộ nhớ tạm lưu các server đã được kích hoạt 24/7 qua Web
+// Bộ nhớ tạm để lưu danh sách các server đã được kích hoạt 24/7 qua Web
 global.votedGuilds = new Map(); 
 
-// ĐƯỜNG DẪN LUỒNG PHÁT LIVE CHÍNH THỨC (Đồng bộ thời gian thực với luồng livestream YouTube Lofi Girl)
+// Link stream nhạc lofi chính thức (Đồng bộ thời gian thực theo giây)
 const LOFI_URL = "https://stream.nightride.fm/chilled.mp3"; 
 
-// --- Khởi tạo Server Express để UptimeRobot giữ bot luôn thức ---
+// --- Khởi tạo Server Express để UptimeRobot ping giữ bot luôn thức ---
 const app = express();
 app.use(express.json());
 
-// API nhận lệnh vote từ Web Vercel
+// API nhận lệnh vote từ phía trang Web Vercel
 app.post('/api/vote', (req, res) => {
     const { guildId } = req.body;
     if (!guildId) return res.status(400).json({ error: 'Thiếu Guild ID' });
     
     global.votedGuilds.set(guildId, true);
-    res.json({ success: true, message: `Server ${guildId} đã kích hoạt 24/7 thành công!` });
+    res.json({ success: true, message: `Server ${guildId} đã kích hoạt chế độ 24/7!` });
 });
 
 app.get('/', (req, res) => {
-    res.send('Skull Music Bot đang hoạt động hoàn hảo 24/7!');
+    res.send('Skull Music Bot đang chạy Live 24/7 hoàn hảo!');
 });
 
 app.listen(process.env.PORT || 3000, () => {
-    console.log('Server Web đồng hành cùng UptimeRobot đã kích hoạt.');
+    console.log('Server giữ uptime đã sẵn sàng hoạt động.');
 });
 
-// --- Logic Hệ Thống Bot Discord ---
+// --- Sự kiện khi Bot đăng nhập thành công ---
 client.once('ready', async () => {
-    console.log(`Đã kết nối thành công: ${client.user.tag}`);
+    console.log(`Tôi đã đăng nhập thành công dưới tên: ${client.user.tag}`);
     
-    // Đăng ký Slash Commands ứng dụng
+    // Đăng ký các Slash Commands bắt buộc
     const commands = [
         new SlashCommandBuilder().setName('lofi').setDescription('Kết nối và phát nhạc lofi 24/7'),
         new SlashCommandBuilder().setName('play').setDescription('Kết nối và phát nhạc lofi'),
-        new SlashCommandBuilder().setName('stop').setDescription('Dừng phát nhạc hoàn toàn và rời phòng')
+        new SlashCommandBuilder().setName('stop').setDescription('Dừng nhạc và rời phòng voice')
     ].map(command => command.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
     try {
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('Đã đồng bộ hóa các lệnh Slash thành công!');
+        console.log('Đã cập nhật hệ thống lệnh Slash thành công!');
     } catch (error) {
-        console.error('Lỗi khi đồng bộ lệnh Slash: ', error);
+        console.error('Lỗi cập nhật lệnh Slash:', error);
     }
 });
 
-// Hàm kết nối và ép luồng phát nhạc LIVE trực tiếp
+// --- Hàm xử lý kết nối phòng và ép luồng phát nhạc LIVE ---
 function playMusicStream(channel) {
     const connection = joinVoiceChannel({
         channelId: channel.id,
@@ -72,43 +72,49 @@ function playMusicStream(channel) {
 
     const localPlayer = createAudioPlayer();
 
-    // Khởi tạo tài nguyên với định dạng Arbitrary để đọc luồng Live liên tục
+    // Sử dụng StreamType.Raw phối hợp với ffmpeg-static để ép âm thanh xuất ra ngay lập tức
     const resource = createAudioResource(LOFI_URL, {
-        inputType: StreamType.Arbitrary,
+        inputType: StreamType.Raw,
         inlineVolume: true
     });
     
-    // Đặt âm lượng dịu nhẹ (0.4 = 40% âm lượng gốc)
-    resource.volume.setVolume(0.4);
+    // Đặt âm lượng dịu nhẹ (0.5 = 50% âm lượng gốc)
+    resource.volume.setVolume(0.5);
 
-    // Tiến hành phát luồng Live vào kết nối phòng voice
     localPlayer.play(resource);
     connection.subscribe(localPlayer);
 
-    // Tự động kết nối lại luồng nếu bị rớt mạng giữa chừng (Giữ kết nối Live 24/7)
+    // Cơ chế tự nạp lại luồng khi bị rớt mạng giữa chừng (Giữ trạng thái Live liên tục)
     localPlayer.on(AudioPlayerStatus.Idle, () => {
-        console.log("Luồng Live bị ngắt quãng, đang tự động kết nối lại...");
+        console.log("Luồng Live đứng im hoặc đổi gói tin, đang nạp lại...");
         try {
             const retryResource = createAudioResource(LOFI_URL, {
-                inputType: StreamType.Arbitrary,
+                inputType: StreamType.Raw,
                 inlineVolume: true
             });
-            retryResource.volume.setVolume(0.4);
+            retryResource.volume.setVolume(0.5);
             localPlayer.play(retryResource);
         } catch (err) {
-            console.error("Lỗi khi kết nối lại luồng Live:", err);
+            console.error("Lỗi tự động nạp lại luồng Live:", err);
         }
     });
 
     localPlayer.on('error', error => {
-        console.error(`Lỗi trình phát nhạc Live: ${error.message}`);
+        console.error(`[Lỗi Trình Phát]: ${error.message}`);
+        // Chế độ dự phòng tự động nếu luồng thô gặp lỗi đột xuất
+        try {
+            const backupResource = createAudioResource(LOFI_URL, { inlineVolume: true });
+            backupResource.volume.setVolume(0.5);
+            localPlayer.play(backupResource);
+        } catch (e) {}
     });
     
     localPlayer.on(AudioPlayerStatus.Playing, () => {
-        console.log('✅ Skull Music đã bắt đầu phát nhạc Live Lofi thành công!');
+        console.log('✅ Skull Music đã cất tiếng hát thành công ra phòng voice!');
     });
 }
 
+// --- Xử lý tương tác lệnh từ người dùng ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -116,18 +122,18 @@ client.on('interactionCreate', async interaction => {
     const voiceChannel = member.voice.channel;
 
     if (!voiceChannel) {
-        return interaction.reply({ content: 'Ní ơi, ní phải vào một kênh voice trước thì tôi mới vào được!', ephemeral: true });
+        return interaction.reply({ content: 'Ní phải vào một kênh voice trước thì tôi mới vào hát được chứ!', ephemeral: true });
     }
 
     if (commandName === 'lofi' || commandName === 'play') {
         await interaction.deferReply();
         try {
             playMusicStream(voiceChannel);
-            // Trả về đúng cú pháp: ✅ Đã tham gia thành công vào #id_kênh
+            // Trả về chính xác cú pháp ní yêu cầu: ✅ Đã tham gia thành công vào #123456789
             await interaction.editReply(`✅ Đã tham gia thành công vào <#${voiceChannel.id}>`);
         } catch (error) {
             console.error(error);
-            await interaction.editReply('Lỗi rồi ní ơi! Không thể kết nối vào kênh voice được.');
+            await interaction.editReply('Có lỗi xảy ra khi kết nối vào phòng voice rồi ní ơi!');
         }
     }
 
@@ -135,14 +141,14 @@ client.on('interactionCreate', async interaction => {
         const connection = getVoiceConnection(guildId);
         if (connection) {
             connection.destroy();
-            await interaction.reply('⏹️ Đã tắt nhạc và rời khỏi phòng voice.');
+            await interaction.reply('⏹️ Đã dừng nhạc và rời khỏi phòng.');
         } else {
-            await interaction.reply('Hiện tại tôi có ở trong phòng nào đâu ní!');
+            await interaction.reply('Hiện tại tôi có ở trong phòng nào đâu nè!');
         }
     }
 });
 
-// --- Tự động phát hiện phòng trống và thoát ---
+// --- Hệ thống tự động kiểm tra phòng trống để thoát ---
 client.on('voiceStateUpdate', (oldState, newState) => {
     const botConnection = getVoiceConnection(oldState.guild.id);
     if (!botConnection) return;
@@ -150,24 +156,16 @@ client.on('voiceStateUpdate', (oldState, newState) => {
     const botVoiceChannelId = botConnection.joinConfig.channelId;
     const channel = oldState.guild.channels.cache.get(botVoiceChannelId);
 
-    // Nếu phòng chỉ còn lại đúng 1 mình Bot
+    // Nếu phòng chỉ còn lại duy nhất một mình Bot ngồi lại
     if (channel && channel.members.size === 1) {
+        // Kiểm tra xem server này đã kích hoạt tính năng Vote 24/7 chưa
         const is247Active = global.votedGuilds.get(oldState.guild.id);
 
-        // Nếu CHƯA ĐƯỢC VOTE 24/7 thì mới tự động thoát phòng kèm lời nhắn
+        // Nếu chưa được Vote thì tiến hành đếm ngược thoát phòng
         if (!is247Active) {
             setTimeout(() => {
+                // Kiểm tra lại sau 5 giây xem có ai vào lại phòng không
                 if (channel.members.size === 1) {
                     botConnection.destroy();
                     
-                    const textChannel = oldState.guild.channels.cache.find(ch => ch.isTextBased());
-                    if (textChannel) {
-                        textChannel.send('Tôi đã mất kết nối vì tôi chỉ có kênh 1 mình.').catch(() => {});
-                    }
-                }
-            }, 5000); // 5 giây chờ đợi cứu vớt
-        }
-    }
-});
-
-client.login(TOKEN);
+                    // Tìm một kênh chat chữ bất kỳ có quyền
